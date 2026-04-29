@@ -18,12 +18,41 @@ To verify production build:
 npm run build
 ```
 
-## 4) Vercel deployment notes
-- This app is a static Vite frontend with no backend.
-- Build command: `npm run build`
-- Output directory: `dist`
-- No environment variables are required.
-- No Node-only runtime code is used in browser components.
+## 4) Vercel deployment guide
+This app is a static Vite frontend (no backend, no environment variables).
+
+### Option A: Deploy from Git (recommended)
+1. Push this repository to GitHub/GitLab/Bitbucket.
+2. In Vercel, click **Add New... → Project**.
+3. Import your repository.
+4. Use these build settings:
+   - **Framework Preset**: `Vite`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+5. Keep Environment Variables empty.
+6. Click **Deploy**.
+7. After deployment, each new commit to the connected branch will trigger a fresh build.
+
+### Option B: Deploy with Vercel CLI
+1. Install Vercel CLI:
+   ```bash
+   npm i -g vercel
+   ```
+2. From project root, run:
+   ```bash
+   vercel
+   ```
+3. Follow prompts:
+   - Link/create Vercel project
+   - Confirm settings (build: `npm run build`, output: `dist`)
+4. For production deployment:
+   ```bash
+   vercel --prod
+   ```
+
+### Troubleshooting
+- If build fails, run `npm install` then `npm run build` locally and fix TypeScript/build errors first.
+- If Vercel cannot find output files, confirm output directory is exactly `dist`.
 
 ## 5) Out-of-scope items
 - No Minecraft plugin/server integration.
