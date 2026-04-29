@@ -15,7 +15,8 @@ type ConfigVariable = {
     | 'visuals_sounds'
     | 'crafting'
     | 'anti_abuse'
-    | 'general';
+    | 'general'
+    | 'mod';
   defaultValue: string | number | boolean | string[];
   value: string | number | boolean | string[];
   unit?: string;
@@ -42,109 +43,224 @@ type AnalyzerResult = {
   implementationNotes: string[];
 };
 
-const samples: Record<string, string> = {
-  weapon: `Mod Name: Eclipse Arsenal\nAdds the Eclipse Blade with three modes: slash, void burst, and shadow lunge.\nSlash deals 12 damage and applies weakness for 6 seconds.\nVoid burst has 8 block radius, deals 7 damage, and applies blindness for 4 seconds.\nShadow lunge cooldown is 15 seconds and grants speed 2 for 5 seconds.\nCritical hit chance: 20%.\nParticle aura spawns 60 particles every 5 ticks.\nCrafting cost: 2 netherite ingots + 1 star core.\nEnabled in survival and PvP arenas.",
-  boss: `Mod Name: Infernal Warden\nAdds a custom boss mob with 600 health in Nether biomes.\nSpawn rate is 0.8% at night, max 3 active bosses per world.\nBoss ability: fire nova every 10 seconds with 12 block radius and slowness for 3s.\nDrops infernal shard with 5% chance and 500 coin reward on kill.\nUses flame particles: 120 per tick during enraged phase.\nCan summon minions every 20 seconds.",
-  utility: `Mod Name: Rift Market Relay\nAdds a teleport pad block and market relay item.\nPlayers can craft teleport pad for 4 obsidian + 1 ender pearl.\nTeleport cooldown 30 seconds, cost 75 coins per use.\nAllows teleport across dimensions unless blocked.\nRelay command /market grants random discount 10% for 60 seconds.\nDaily limit 5 uses.\nRecommended for economy and utility servers.`
+const sampleInputs: Record<string, string> = {
+  weapon: `Mod Name: Eclipse Arsenal
+Adds the Eclipse Blade with three combat modes.
+Slash deals 12 damage and applies weakness for 6 seconds.
+Void burst deals 7 damage in 8 block radius and applies blindness for 4 seconds.
+Shadow lunge cooldown is 15 seconds.
+Critical hit chance 20%.
+Particle aura spawns 60 particles every 5 ticks.
+Recipe: 2 netherite + 1 star core.`,
+  boss: `Mod Name: Infernal Warden
+Custom boss mob with 600 health in Nether biomes.
+Spawn rate is 0.8% at night, max 3 active bosses per world.
+Ability: fire nova every 10 seconds, 12 block radius, slowness 3s.
+Drops infernal shard at 5% chance and 500 coin reward.
+Uses 120 flame particles each tick while enraged.`,
+  utility: `Mod Name: Rift Market Relay
+Adds teleport pad block and market relay item.
+Crafting uses 4 obsidian and 1 ender pearl.
+Teleport cooldown 30 seconds and cost 75 coins per use.
+Can teleport across dimensions.
+Command /market grants discount buff for 60 seconds.
+Daily limit 5 uses.`
 };
 
-const categories: ConfigVariable['category'][] = [
-  'general','gameplay','combat','spawning','economy','permissions','worlds','performance','visuals_sounds','crafting','anti_abuse'
+const yamlOrder: ConfigVariable['category'][] = [
+  'mod',
+  'permissions',
+  'worlds',
+  'gameplay',
+  'combat',
+  'spawning',
+  'economy',
+  'performance',
+  'visuals_sounds',
+  'anti_abuse'
 ];
 
-const labelMap: Record<ConfigVariable['category'], string> = {
-  general:'General',gameplay:'Gameplay',combat:'Combat',spawning:'Spawning',economy:'Economy',permissions:'Permissions',worlds:'Worlds',performance:'Performance',visuals_sounds:'Visuals & Sounds',crafting:'Crafting',anti_abuse:'Anti-abuse'
+const categoryTitles: Record<ConfigVariable['category'], string> = {
+  mod: 'Mod',
+  general: 'General',
+  permissions: 'Permissions',
+  worlds: 'Worlds',
+  gameplay: 'Gameplay',
+  combat: 'Combat',
+  spawning: 'Spawning',
+  economy: 'Economy',
+  performance: 'Performance',
+  visuals_sounds: 'Visuals & Sounds',
+  anti_abuse: 'Anti-abuse',
+  crafting: 'Crafting'
 };
 
-const detectNumber = (text: string, pattern: RegExp) => {
-  const match = text.match(pattern);
+const extractNumber = (text: string, regex: RegExp): number | undefined => {
+  const match = text.match(regex);
   return match ? Number(match[1]) : undefined;
 };
 
-function analyzeText(text: string): AnalyzerResult {
-  const source = text.toLowerCase();
-  const modName = text.match(/mod name:\s*(.+)/i)?.[1]?.trim() || 'Unnamed Generated Mod';
-  const features: string[] = [];
-  const vars: ConfigVariable[] = [];
-  const warnings: AnalyzerResult['warnings'] = [];
-  const notes: string[] = [];
+const analyzeText = (input: string): AnalyzerResult => {
+  const text = input.toLowerCase();
+  const modName = input.match(/mod name:\s*(.+)/i)?.[1]?.trim() ?? 'Unnamed Generated Mod';
 
-  const hasCombat = /damage|pvp|weapon|critical|slash|blindness|weakness|slowness/.test(source);
-  const hasSpawning = /spawn|mob|boss|minion|biome/.test(source);
-  const hasEconomy = /coin|currency|price|cost|shop|market|reward/.test(source);
-  const hasTeleport = /teleport|dimension|rift|portal/.test(source);
-  const hasParticles = /particle|aura|tick/.test(source);
-  const hasCrafting = /craft|recipe|ingot|obsidian/.test(source);
-  const hasDrops = /drop|chance|loot|reward/.test(source);
-  const hasAbilities = /ability|cooldown|every\s+\d+\s*seconds|mode/.test(source);
+  const hasCombat = /damage|critical|weapon|pvp|weakness|blindness|slowness|combat/.test(text);
+  const hasSpawning = /spawn|boss|mob|minion|biome|active/.test(text);
+  const hasEconomy = /coin|price|cost|economy|reward|market|currency/.test(text);
+  const hasTeleport = /teleport|dimension|portal|rift/.test(text);
+  const hasParticles = /particle|aura|tick/.test(text);
+  const hasCrafting = /craft|recipe|obsidian|ingot/.test(text);
+  const hasDrops = /drop|loot|chance|reward/.test(text);
+  const hasAbilities = /cooldown|ability|mode|every\s+\d+\s*seconds/.test(text);
 
-  const contentType = hasSpawning ? 'Mob/Boss System' : hasCombat ? 'Combat Item/Ability' : hasEconomy ? 'Economy/Utility Mechanic' : 'General Mod Feature';
-  [hasCombat && 'combat', hasSpawning && 'spawning', hasEconomy && 'economy', hasTeleport && 'teleportation', hasParticles && 'particles', hasCrafting && 'crafting', hasDrops && 'drops', hasAbilities && 'abilities']
-    .filter(Boolean)
-    .forEach((f) => features.push(String(f)));
+  const detectedFeatures = [
+    hasCombat && 'combat',
+    hasSpawning && 'spawning',
+    hasEconomy && 'economy',
+    hasTeleport && 'teleportation',
+    hasParticles && 'particles',
+    hasCrafting && 'crafting',
+    hasDrops && 'drops',
+    hasAbilities && 'abilities'
+  ].filter(Boolean) as string[];
 
-  vars.push({ key:'enabled', label:'Feature Enabled', type:'boolean', category:'general', defaultValue:true, value:true, riskLevel:'low', inferred:true, reason:'Always provide global enable toggle.' });
-  vars.push({ key:'permission_node', label:'Permission Node', type:'string', category:'permissions', defaultValue:'minecraftmod.use', value:'minecraftmod.use', riskLevel:'low', inferred:true, reason:'Server owners need permission control.' });
-  vars.push({ key:'disabled_worlds', label:'Disabled Worlds', type:'list', category:'worlds', defaultValue:['lobby','spawn'], value:['lobby','spawn'], riskLevel:'medium', inferred:true, reason:'Generated features should be blocked in protected worlds.' });
+  const contentType = hasSpawning
+    ? 'Mob/Boss System'
+    : hasCombat
+      ? 'Combat Item/Ability'
+      : hasEconomy
+        ? 'Utility/Economy Mechanic'
+        : 'General Mod Mechanic';
 
-  const cooldown = detectNumber(source, /cooldown\s*(?:is)?\s*(\d+(?:\.\d+)?)\s*seconds?/);
-  if (hasAbilities || cooldown) vars.push({ key:'ability_cooldown_seconds', label:'Ability Cooldown', type:'number', category:'gameplay', defaultValue:cooldown ?? 15, value:cooldown ?? 15, min:1, max:300, unit:'seconds', riskLevel:'medium', inferred:!cooldown, reason:'Abilities and action loops require cooldowns.' });
+  const vars: ConfigVariable[] = [
+    {
+      key: 'name',
+      label: 'Mod Display Name',
+      type: 'string',
+      category: 'mod',
+      defaultValue: modName,
+      value: modName,
+      riskLevel: 'low',
+      inferred: false,
+      reason: 'Identified from generated text.'
+    },
+    {
+      key: 'enabled',
+      label: 'Enable Mod Feature',
+      type: 'boolean',
+      category: 'mod',
+      defaultValue: true,
+      value: true,
+      riskLevel: 'low',
+      inferred: true,
+      reason: 'Global on/off switch is essential for rollback.'
+    },
+    {
+      key: 'node',
+      label: 'Permission Node',
+      type: 'string',
+      category: 'permissions',
+      defaultValue: 'minecraftmod.use',
+      value: 'minecraftmod.use',
+      riskLevel: 'low',
+      inferred: true,
+      reason: 'Permission gates are required for multiplayer control.'
+    },
+    {
+      key: 'disabled_worlds',
+      label: 'Disabled Worlds',
+      type: 'list',
+      category: 'worlds',
+      defaultValue: ['lobby', 'spawn'],
+      value: ['lobby', 'spawn'],
+      riskLevel: 'medium',
+      inferred: true,
+      reason: 'Protect lobby/spawn by default.'
+    }
+  ];
 
-  const damage = detectNumber(source, /deals?\s*(\d+(?:\.\d+)?)\s*damage/);
-  if (hasCombat) {
-    vars.push({ key:'pvp_only', label:'PvP Only', type:'boolean', category:'combat', defaultValue:true, value:true, riskLevel:'medium', inferred:true, reason:'Combat systems often require PvP scoping.' });
-    vars.push({ key:'base_damage', label:'Base Damage', type:'number', category:'combat', defaultValue:damage ?? 8, value:damage ?? 8, min:0, max:100, riskLevel:'high', inferred:!damage, reason:'Damage should be configurable for balance.' });
+  const cooldown = extractNumber(text, /cooldown\s*(?:is)?\s*(\d+(?:\.\d+)?)\s*seconds?/);
+  if (hasAbilities) {
+    vars.push({
+      key: 'cooldown_seconds',
+      label: 'Action Cooldown',
+      type: 'number',
+      category: 'gameplay',
+      defaultValue: cooldown ?? 15,
+      value: cooldown ?? 15,
+      unit: 'seconds',
+      min: 1,
+      max: 300,
+      riskLevel: 'medium',
+      inferred: !cooldown,
+      reason: 'Ability actions should be rate-limited.'
+    });
   }
 
-  const radius = detectNumber(source, /(\d+(?:\.\d+)?)\s*block\s*radius/);
-  if (radius) vars.push({ key:'ability_radius', label:'Ability Radius', type:'number', category:'combat', defaultValue:radius, value:radius, min:1, max:64, unit:'blocks', riskLevel:'high', inferred:false, reason:'Explicit AoE radius detected.' });
+  if (hasCombat) {
+    const damage = extractNumber(text, /deals?\s*(\d+(?:\.\d+)?)\s*damage/);
+    const radius = extractNumber(text, /(\d+(?:\.\d+)?)\s*block\s*radius/);
+    vars.push({ key: 'pvp_only', label: 'PvP Only', type: 'boolean', category: 'combat', defaultValue: true, value: true, riskLevel: 'medium', inferred: true, reason: 'Combat mechanics should be scoped.' });
+    vars.push({ key: 'base_damage', label: 'Base Damage', type: 'number', category: 'combat', defaultValue: damage ?? 8, value: damage ?? 8, min: 0, max: 100, riskLevel: 'high', inferred: !damage, reason: 'Damage tuning affects balance.' });
+    if (radius) vars.push({ key: 'aoe_radius', label: 'AoE Radius', type: 'number', category: 'combat', defaultValue: radius, value: radius, min: 1, max: 64, unit: 'blocks', riskLevel: 'high', inferred: false, reason: 'Explicit radius extracted from text.' });
+  }
 
-  const health = detectNumber(source, /(\d+(?:\.\d+)?)\s*health/);
-  const spawnRate = detectNumber(source, /spawn rate\s*(?:is)?\s*(\d+(?:\.\d+)?)\s*%/);
   if (hasSpawning) {
-    vars.push({ key:'max_active_entities', label:'Max Active Entities', type:'number', category:'spawning', defaultValue:3, value:3, min:1, max:100, riskLevel:'high', inferred:true, reason:'Spawned entities require active caps.' });
-    vars.push({ key:'spawn_rate_percent', label:'Spawn Rate', type:'number', category:'spawning', defaultValue:spawnRate ?? 1, value:spawnRate ?? 1, unit:'%', min:0, max:100, riskLevel:'high', inferred:!spawnRate, reason:'Spawn frequency strongly impacts gameplay and TPS.' });
-    vars.push({ key:'allowed_biomes', label:'Allowed Biomes', type:'list', category:'spawning', defaultValue:['nether_wastes'], value:['nether_wastes'], riskLevel:'medium', inferred:true, reason:'Biome restrictions prevent overexposure.' });
-    if (health) vars.push({ key:'mob_health', label:'Mob/Boss Health', type:'number', category:'spawning', defaultValue:health, value:health, min:1, max:5000, riskLevel:'high', inferred:false, reason:'Explicit mob health detected.' });
+    const health = extractNumber(text, /(\d+(?:\.\d+)?)\s*health/);
+    const spawnRate = extractNumber(text, /spawn rate\s*(?:is)?\s*(\d+(?:\.\d+)?)\s*%/);
+    vars.push({ key: 'max_active_entities', label: 'Max Active Entities', type: 'number', category: 'spawning', defaultValue: 3, value: 3, min: 1, max: 100, riskLevel: 'high', inferred: true, reason: 'Caps prevent runaway mob spam.' });
+    vars.push({ key: 'spawn_rate_percent', label: 'Spawn Rate', type: 'number', category: 'spawning', defaultValue: spawnRate ?? 1, value: spawnRate ?? 1, unit: '%', min: 0, max: 100, riskLevel: 'high', inferred: !spawnRate, reason: 'Spawn frequency controls load.' });
+    if (health) vars.push({ key: 'mob_health', label: 'Mob Health', type: 'number', category: 'spawning', defaultValue: health, value: health, min: 1, max: 5000, riskLevel: 'high', inferred: false, reason: 'Boss/mob health extracted.' });
   }
 
   if (hasDrops) {
-    const dropChance = detectNumber(source, /(\d+(?:\.\d+)?)\s*%\s*chance/);
-    vars.push({ key:'drop_chance_percent', label:'Drop Chance', type:'number', category:'economy', defaultValue:dropChance ?? 5, value:dropChance ?? 5, min:0, max:100, unit:'%', riskLevel:'medium', inferred:!dropChance, reason:'Drop rates affect progression/economy.' });
+    const dropChance = extractNumber(text, /(\d+(?:\.\d+)?)\s*%\s*chance/);
+    vars.push({ key: 'drop_chance_percent', label: 'Drop Chance', type: 'number', category: 'economy', defaultValue: dropChance ?? 5, value: dropChance ?? 5, min: 0, max: 100, unit: '%', riskLevel: 'medium', inferred: !dropChance, reason: 'Loot rates impact progression and economy.' });
   }
 
   if (hasEconomy) {
-    const price = detectNumber(source, /cost\s*(\d+(?:\.\d+)?)\s*coins?/);
-    vars.push({ key:'max_daily_reward', label:'Max Daily Currency Reward', type:'number', category:'economy', defaultValue:1000, value:1000, min:0, max:100000, riskLevel:'high', inferred:true, reason:'Economy features need anti-inflation caps.' });
-    vars.push({ key:'action_cost', label:'Action Cost', type:'number', category:'economy', defaultValue:price ?? 50, value:price ?? 50, min:0, max:100000, riskLevel:'medium', inferred:!price, reason:'Explicit or inferred currency cost control.' });
+    const cost = extractNumber(text, /cost\s*(\d+(?:\.\d+)?)\s*coins?/);
+    vars.push({ key: 'action_cost', label: 'Action Cost', type: 'number', category: 'economy', defaultValue: cost ?? 50, value: cost ?? 50, min: 0, max: 100000, riskLevel: 'medium', inferred: !cost, reason: 'Currency sinks should be configurable.' });
+    vars.push({ key: 'max_daily_reward', label: 'Daily Currency Cap', type: 'number', category: 'economy', defaultValue: 1000, value: 1000, min: 0, max: 100000, riskLevel: 'high', inferred: true, reason: 'Protects against economy inflation.' });
   }
 
   if (hasParticles) {
-    vars.push({ key:'particle_density_multiplier', label:'Particle Density', type:'number', category:'visuals_sounds', defaultValue:0.6, value:0.6, min:0, max:2, riskLevel:'high', inferred:true, reason:'Visual load should be tunable for TPS.' });
-    vars.push({ key:'effect_tick_interval', label:'Effect Tick Interval', type:'number', category:'performance', defaultValue:10, value:10, min:1, max:200, unit:'ticks', riskLevel:'high', inferred:true, reason:'Tick frequency impacts performance.' });
+    vars.push({ key: 'effect_tick_interval', label: 'Effect Tick Interval', type: 'number', category: 'performance', defaultValue: 10, value: 10, min: 1, max: 200, unit: 'ticks', riskLevel: 'high', inferred: true, reason: 'Tick interval impacts TPS usage.' });
+    vars.push({ key: 'particle_density_multiplier', label: 'Particle Density', type: 'number', category: 'visuals_sounds', defaultValue: 0.6, value: 0.6, min: 0, max: 2, riskLevel: 'high', inferred: true, reason: 'Particle load should be tunable.' });
   }
 
-  if (hasCrafting) vars.push({ key:'recipe_enabled', label:'Recipe Enabled', type:'boolean', category:'crafting', defaultValue:true, value:true, riskLevel:'low', inferred:true, reason:'Server owners may disable recipes.' });
-  if (hasTeleport) vars.push({ key:'teleport_cross_dimension', label:'Allow Cross-Dimension Teleport', type:'boolean', category:'anti_abuse', defaultValue:false, value:false, riskLevel:'high', inferred:true, reason:'Cross-dimension travel can be abused.' });
+  if (hasTeleport) {
+    vars.push({ key: 'cross_dimension_teleport', label: 'Allow Cross-Dimension Teleport', type: 'boolean', category: 'anti_abuse', defaultValue: false, value: false, riskLevel: 'high', inferred: true, reason: 'Teleportation can bypass protections.' });
+  }
 
-  if (/buff|effect|weakness|blindness|slowness/.test(source)) warnings.push({ severity:'warning', category:'balance', message:'Too many simultaneous buffs/debuffs can destabilize PvP balance.', suggestedFix:'Limit concurrent effects and expose effect duration multipliers.' });
-  if (/blindness|weakness|slowness/.test(source)) warnings.push({ severity:'critical', category:'combat', message:'AoE control effects may feel oppressive in PvP.', suggestedFix:'Reduce radius/duration and enable PvP-only whitelist worlds.' });
-  if (hasParticles) warnings.push({ severity:'warning', category:'performance', message:'High-frequency particles and tick effects can reduce TPS.', suggestedFix:'Lower particle density and raise tick intervals.' });
-  if (hasSpawning) warnings.push({ severity:'warning', category:'spawning', message:'Mobs/bosses require strict spawn caps and world restrictions.', suggestedFix:'Use max active caps and biome/world allowlists.' });
-  if (hasDrops || hasEconomy) warnings.push({ severity:'warning', category:'economy', message:'Drops and currency rewards can inflate server economy.', suggestedFix:'Apply daily caps and dynamic drop chance throttles.' });
-  if (hasTeleport) warnings.push({ severity:'critical', category:'anti_abuse', message:'Teleport/dimension mechanics can bypass protected areas.', suggestedFix:'Disable in spawn worlds and add cooldown + permission checks.' });
-  if (/explosion|fire|destructive|grief/.test(source)) warnings.push({ severity:'critical', category:'griefing', message:'Destructive effects can enable griefing.', suggestedFix:'Disable block damage by default and gate by permission.' });
-  warnings.push({ severity:'info', category:'world-safety', message:'Generated features should be disabled in lobby/spawn worlds by default.', suggestedFix:'Keep lobby and spawn in disabled_worlds unless explicitly allowed.' });
+  const warnings: AnalyzerResult['warnings'] = [];
+  if (/buff|effect|weakness|blindness|slowness/.test(text)) warnings.push({ severity: 'warning', category: 'balance', message: 'Too many stacked effects can hurt PvP balance.', suggestedFix: 'Limit concurrent effects and expose durations.' });
+  if (/blindness|weakness|slowness/.test(text)) warnings.push({ severity: 'critical', category: 'combat', message: 'AoE control effects may feel oppressive.', suggestedFix: 'Reduce radius/duration and restrict PvP worlds.' });
+  if (hasParticles) warnings.push({ severity: 'warning', category: 'performance', message: 'Frequent particles/ticks may reduce TPS.', suggestedFix: 'Increase tick interval and lower particle density.' });
+  if (hasSpawning) warnings.push({ severity: 'warning', category: 'spawning', message: 'Boss/mob features require spawn caps and world limits.', suggestedFix: 'Use max active caps and allowed world/biome lists.' });
+  if (hasDrops || hasEconomy) warnings.push({ severity: 'warning', category: 'economy', message: 'Reward loops can inflate currency value.', suggestedFix: 'Apply daily caps and tune drop chance.' });
+  if (hasTeleport) warnings.push({ severity: 'critical', category: 'anti_abuse', message: 'Teleport mechanics can bypass safe zones.', suggestedFix: 'Disable in spawn/lobby worlds and require permissions.' });
+  warnings.push({ severity: 'info', category: 'world-safety', message: 'Generated features should be disabled in lobby/spawn by default.', suggestedFix: 'Keep disabled_worlds populated unless intentionally overridden.' });
 
-  notes.push('Map each variable key directly into your plugin config loader to minimize mismatch between prototype and implementation.');
-  notes.push('Validate min/max constraints at plugin startup and log warnings when server edits exceed safe ranges.');
-  notes.push('Apply world checks before action execution (combat, teleport, spawning) to prevent bypasses.');
+  const implementationNotes = [
+    'Map these keys directly into your plugin config reader to keep naming consistent.',
+    'Validate min/max values at startup and log warnings for unsafe values.',
+    'Run world + permission checks before every action execution path.'
+  ];
 
-  return { modName, contentType, confidence: Math.min(0.98, 0.5 + features.length * 0.06), detectedFeatures: features, variables: vars, warnings, implementationNotes: notes };
-}
+  return {
+    modName,
+    contentType,
+    confidence: Math.min(0.98, 0.5 + detectedFeatures.length * 0.06),
+    detectedFeatures,
+    variables: vars,
+    warnings,
+    implementationNotes
+  };
+};
 
 function App() {
-  const [input, setInput] = useState(samples.weapon);
+  const [input, setInput] = useState(sampleInputs.weapon);
   const [result, setResult] = useState<AnalyzerResult | null>(null);
 
   const grouped = useMemo(() => {
@@ -157,47 +273,126 @@ function App() {
 
   const yaml = useMemo(() => {
     if (!result) return '';
-    let out = `# Generated config.yml for ${result.modName}\n`;
-    for (const category of categories) {
-      const vars = grouped[category];
-      if (!vars?.length) continue;
-      out += `\n${category}:\n`;
-      for (const v of vars) {
-        out += `  # ${v.reason}${v.inferred ? ' (inferred)' : ''}${v.riskLevel !== 'low' ? ` [risk:${v.riskLevel}]` : ''}\n`;
-        const val = Array.isArray(v.value) ? `[${v.value.map((i) => `"${i}"`).join(', ')}]` : typeof v.value === 'string' ? `"${v.value}"` : v.value;
-        out += `  ${v.key}: ${val}\n`;
+    let output = `# Server-ready config.yml generated from mod text\n`;
+    for (const category of yamlOrder) {
+      const values = grouped[category];
+      if (!values?.length) continue;
+      output += `\n${category}:\n`;
+      for (const item of values) {
+        output += `  # ${item.reason}${item.inferred ? ' (inferred)' : ''}${item.riskLevel === 'high' ? ' [high-risk]' : ''}\n`;
+        const value = Array.isArray(item.value)
+          ? `[${item.value.map((v) => `"${v}"`).join(', ')}]`
+          : typeof item.value === 'string'
+            ? `"${item.value}"`
+            : item.value;
+        output += `  ${item.key}: ${value}\n`;
       }
     }
-    return out;
+    return output;
   }, [grouped, result]);
 
-  return <div className="container"> <h1>Minecraft Mod Configurator</h1>
-    <p>Paste generated mod output, infer server-ready controls, edit values, then export config.yml.</p>
-    <div className="top-controls">
-      <select onChange={(e) => setInput(samples[e.target.value])}>
-        <option value="weapon">Load Sample: Weapon modes</option>
-        <option value="boss">Load Sample: Boss mob</option>
-        <option value="utility">Load Sample: Utility/economy</option>
-      </select>
-      <button onClick={() => setResult(analyzeText(input))}>Analyze Configurability</button>
-    </div>
-    <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={12} />
+  const updateVariable = (target: ConfigVariable, value: string | number | boolean | string[]) => {
+    setResult((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        variables: previous.variables.map((item) => (item.key === target.key ? { ...item, value } : item))
+      };
+    });
+  };
 
-    {result && <>
-      <section><h2>Analysis</h2><p><b>Mod:</b> {result.modName} | <b>Type:</b> {result.contentType} | <b>Confidence:</b> {(result.confidence*100).toFixed(0)}%</p>
-      <p><b>Detected Features:</b> {result.detectedFeatures.join(', ')}</p></section>
-      <section><h2>Server Settings</h2>
-      {categories.map((cat) => grouped[cat]?.length ? <div key={cat}><h3>{labelMap[cat]}</h3>{grouped[cat].map((v, idx)=><div className="var" key={v.key+idx}><label>{v.label}</label>
-      {v.type === 'boolean' ? <input type="checkbox" checked={Boolean(v.value)} onChange={(e)=>setResult((prev)=>prev?{...prev,variables:prev.variables.map((pv)=>pv.key===v.key?{...pv,value:e.target.checked}:pv)}:prev)} />
-      : v.type === 'list' ? <input value={(v.value as string[]).join(', ')} onChange={(e)=>setResult((prev)=>prev?{...prev,variables:prev.variables.map((pv)=>pv.key===v.key?{...pv,value:e.target.value.split(',').map((s)=>s.trim()).filter(Boolean)}:pv)}:prev)} />
-      : <input type={v.type === 'number' ? 'number' : 'text'} value={String(v.value)} onChange={(e)=>setResult((prev)=>prev?{...prev,variables:prev.variables.map((pv)=>pv.key===v.key?{...pv,value:v.type==='number'?Number(e.target.value):e.target.value}:pv)}:prev)} />}
-      <small>{v.reason} {v.inferred ? '(Inferred)' : '(Detected)'}</small></div>)}</div> : null)}
-      </section>
-      <section><h2>Warnings</h2>{result.warnings.map((w,i)=><div className={`warn ${w.severity}`} key={i}><b>{w.severity.toUpperCase()}</b> [{w.category}] {w.message} Fix: {w.suggestedFix}</div>)}</section>
-      <section><h2>config.yml</h2><button onClick={()=>navigator.clipboard.writeText(yaml)}>Copy config.yml</button><pre>{yaml}</pre></section>
-      <section><h2>Plugin Implementation Notes</h2><ul>{result.implementationNotes.map((n,i)=><li key={i}>{n}</li>)}</ul></section>
-    </>}
-  </div>;
+  const downloadYaml = () => {
+    const blob = new Blob([yaml], { type: 'text/yaml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'config.yml';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="container">
+      <h1>Minecraft Mod Configurator</h1>
+      <div className="explanation-card">
+        Generated mods are creative, but multiplayer servers need configurable limits, permissions, world restrictions, and performance controls. This prototype scans generated mod output and creates a server-ready config layer.
+      </div>
+      <div className="top-controls">
+        <select onChange={(e) => setInput(sampleInputs[e.target.value])}>
+          <option value="weapon">Load Sample: Weapon/Combat</option>
+          <option value="boss">Load Sample: Boss/Spawning/Drops</option>
+          <option value="utility">Load Sample: Utility/Economy/Teleport</option>
+        </select>
+        <button onClick={() => setResult(analyzeText(input))}>Analyze Configurability</button>
+      </div>
+      <textarea rows={12} value={input} onChange={(e) => setInput(e.target.value)} />
+
+      {result && (
+        <>
+          <section>
+            <h2>Analysis Overview</h2>
+            <p><b>Mod:</b> {result.modName} | <b>Type:</b> {result.contentType} | <b>Confidence:</b> {(result.confidence * 100).toFixed(0)}%</p>
+            <p><b>Detected Features:</b> {result.detectedFeatures.join(', ')}</p>
+          </section>
+
+          <section>
+            <h2>Server Settings</h2>
+            {yamlOrder.map((category) => {
+              const values = grouped[category];
+              if (!values?.length) return null;
+              return (
+                <div key={category} className="category-block">
+                  <h3>{categoryTitles[category]}</h3>
+                  {values.map((item) => (
+                    <div className="setting" key={`${category}-${item.key}`}>
+                      <div className="setting-head">
+                        <label>{item.label}</label>
+                        <span className={`risk ${item.riskLevel}`}>{item.riskLevel.toUpperCase()} RISK</span>
+                      </div>
+                      {item.type === 'boolean' ? (
+                        <input type="checkbox" checked={Boolean(item.value)} onChange={(e) => updateVariable(item, e.target.checked)} />
+                      ) : item.type === 'list' ? (
+                        <input value={(item.value as string[]).join(', ')} onChange={(e) => updateVariable(item, e.target.value.split(',').map((x) => x.trim()).filter(Boolean))} />
+                      ) : (
+                        <input type={item.type === 'number' ? 'number' : 'text'} value={String(item.value)} onChange={(e) => updateVariable(item, item.type === 'number' ? Number(e.target.value) : e.target.value)} />
+                      )}
+                      <small>{item.reason} {item.inferred ? '(Inferred)' : '(Detected)'}</small>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </section>
+
+          <section>
+            <h2>Warnings</h2>
+            {result.warnings.map((warning, index) => (
+              <div key={index} className={`warn ${warning.severity}`}>
+                <b>{warning.severity.toUpperCase()}</b> [{warning.category}] {warning.message}<br />
+                Fix: {warning.suggestedFix}
+              </div>
+            ))}
+          </section>
+
+          <section>
+            <h2>config.yml Export</h2>
+            <div className="yaml-actions">
+              <button onClick={() => navigator.clipboard.writeText(yaml)}>Copy config.yml</button>
+              <button onClick={downloadYaml}>Download config.yml</button>
+            </div>
+            <pre>{yaml}</pre>
+          </section>
+
+          <section>
+            <h2>Implementation Notes</h2>
+            <ul>
+              {result.implementationNotes.map((note) => (<li key={note}>{note}</li>))}
+            </ul>
+          </section>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default App;
