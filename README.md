@@ -1,17 +1,19 @@
-# Creator Controls Demo (UI Mockup)
+# Creator Controls Prototype (v2)
 
-Frontend-only React + Vite + TypeScript prototype that recreates a CreativeMode-style generated mod detail page layout for private product mockup/testing.
+## What Creator Controls are
+Creator Controls is a post-generation tuning layer for generated Minecraft mods. Instead of re-prompting for every small balance tweak, users can adjust key values directly in a no-code UI.
 
-## What this prototype includes
-- Dark, compact, monospace UI theme inspired by the provided screenshot.
-- Generated mod detail page sections (top nav, title/meta, preview cards, tabs, edit panel, sidebar cards, version history, tutorial toast).
-- Placeholder branding only (`Creator Controls Demo`) and no copied brand assets.
+## Why prompt-only edits are awkward for small changes
+Prompting is great for creative direction, but small adjustments (damage, cooldowns, effect duration, particles, mode toggles) can cause accidental side changes when regenerating. Creator Controls keeps those tweaks predictable.
 
-## Constraints
-- No backend, auth, database, API calls, or payments.
-- No environment variables.
-- No real JAR compilation.
-- Static frontend deployable on Vercel.
+## How this preserves the no-code flow
+Users still stay in a guided web flow: generate a mod idea, then tune values with sliders/toggles/selects. No source editing, no manual config workflow.
+
+## Why this prototype does not compile a real JAR
+This is a frontend-only Vite demo. It intentionally does not run Gradle/Fabric compilation.
+
+## How real implementation would work
+In production, CreativeMode’s existing generation/build pipeline would apply tuned values and produce the updated tuned JAR.
 
 ## Run locally
 ```bash
@@ -19,12 +21,13 @@ npm install
 npm run dev
 ```
 
-## Production build
+## Build
 ```bash
 npm run build
 ```
 
-## Vercel deployment
+## Deploy to Vercel
 - Framework preset: **Vite**
 - Build command: `npm run build`
 - Output directory: `dist`
+- Environment variables: none required
