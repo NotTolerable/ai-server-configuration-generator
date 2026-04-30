@@ -313,7 +313,15 @@ function App() {
 
   return (
     <div className="container">
-      <h1>Minecraft Mod Configurator</h1>
+      <header className="header-card">
+        <div className="brand-row">
+          <span className="tag green">LOCAL ANALYZER</span>
+          <span className="tag violet">SERVER CONFIG LAYER</span>
+          <span className="tag">NO BACKEND</span>
+        </div>
+        <h1 className="header-title">Minecraft Mod Configurator</h1>
+        <div className="meta">Post-generation configurability scanner for multiplayer-safe mod tuning.</div>
+      </header>
       <div className="explanation-card">
         Generated mods are creative, but multiplayer servers need configurable limits, permissions, world restrictions, and performance controls. This prototype scans generated mod output and creates a server-ready config layer.
       </div>
@@ -330,13 +338,13 @@ function App() {
       {result && (
         <>
           <section>
-            <h2>Analysis Overview</h2>
+            <div className="section-heading"><h2>Analysis Overview</h2></div>
             <p><b>Mod:</b> {result.modName} | <b>Type:</b> {result.contentType} | <b>Confidence:</b> {(result.confidence * 100).toFixed(0)}%</p>
             <p><b>Detected Features:</b> {result.detectedFeatures.join(', ')}</p>
           </section>
 
           <section>
-            <h2>Server Settings</h2>
+            <div className="section-heading"><h2>Server Settings</h2></div>
             {yamlOrder.map((category) => {
               const values = grouped[category];
               if (!values?.length) return null;
@@ -365,7 +373,7 @@ function App() {
           </section>
 
           <section>
-            <h2>Warnings</h2>
+            <div className="section-heading"><h2>Warnings</h2></div>
             {result.warnings.map((warning, index) => (
               <div key={index} className={`warn ${warning.severity}`}>
                 <b>{warning.severity.toUpperCase()}</b> [{warning.category}] {warning.message}<br />
@@ -375,16 +383,16 @@ function App() {
           </section>
 
           <section>
-            <h2>config.yml Export</h2>
+            <div className="section-heading"><h2>config.yml Export</h2></div>
             <div className="yaml-actions">
               <button onClick={() => navigator.clipboard.writeText(yaml)}>Copy config.yml</button>
-              <button onClick={downloadYaml}>Download config.yml</button>
+              <button className="secondary" onClick={downloadYaml}>Download config.yml</button>
             </div>
             <pre>{yaml}</pre>
           </section>
 
           <section>
-            <h2>Implementation Notes</h2>
+            <div className="section-heading"><h2>Implementation Notes</h2></div>
             <ul>
               {result.implementationNotes.map((note) => (<li key={note}>{note}</li>))}
             </ul>
