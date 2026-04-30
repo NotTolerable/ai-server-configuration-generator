@@ -1,406 +1,216 @@
 import { useMemo, useState } from 'react';
 
-type ConfigVariable = {
+type ContentType =
+  | 'weapon'
+  | 'armor'
+  | 'tool'
+  | 'item'
+  | 'mob/boss'
+  | 'block'
+  | 'dimension'
+  | 'structure'
+  | 'economy system'
+  | 'command system';
+
+type ControlCategory = 'Gameplay' | 'Combat' | 'Effects' | 'Visuals & Sounds' | 'Multiplayer Safety' | 'Advanced';
+type ControlInput = 'slider' | 'toggle' | 'select' | 'number' | 'tags';
+
+type CreatorControl = {
   key: string;
   label: string;
-  type: 'number' | 'boolean' | 'string' | 'select' | 'list';
-  category:
-    | 'gameplay'
-    | 'combat'
-    | 'spawning'
-    | 'economy'
-    | 'permissions'
-    | 'worlds'
-    | 'performance'
-    | 'visuals_sounds'
-    | 'crafting'
-    | 'anti_abuse'
-    | 'general'
-    | 'mod';
-  defaultValue: string | number | boolean | string[];
-  value: string | number | boolean | string[];
-  unit?: string;
+  category: ControlCategory;
+  input: ControlInput;
+  value: number | boolean | string | string[];
   min?: number;
   max?: number;
+  step?: number;
   options?: string[];
-  riskLevel: 'low' | 'medium' | 'high';
-  inferred: boolean;
+  risk: 'low' | 'medium' | 'high';
+  source: 'explicit' | 'inferred';
   reason: string;
 };
 
 type AnalyzerResult = {
   modName: string;
-  contentType: string;
+  target: string;
+  primaryContentType: ContentType;
+  detectedMechanics: string[];
   confidence: number;
-  detectedFeatures: string[];
-  variables: ConfigVariable[];
-  warnings: {
-    severity: 'info' | 'warning' | 'critical';
-    category: string;
-    message: string;
-    suggestedFix: string;
-  }[];
-  implementationNotes: string[];
+  controls: CreatorControl[];
 };
 
-const sampleInputs: Record<string, string> = {
-  weapon: `Mod Name: Eclipse Arsenal
-Adds the Eclipse Blade with three combat modes.
-Slash deals 12 damage and applies weakness for 6 seconds.
-Void burst deals 7 damage in 8 block radius and applies blindness for 4 seconds.
-Shadow lunge cooldown is 15 seconds.
-Critical hit chance 20%.
-Particle aura spawns 60 particles every 5 ticks.
-Recipe: 2 netherite + 1 star core.`,
-  boss: `Mod Name: Infernal Warden
-Custom boss mob with 600 health in Nether biomes.
-Spawn rate is 0.8% at night, max 3 active bosses per world.
-Ability: fire nova every 10 seconds, 12 block radius, slowness 3s.
-Drops infernal shard at 5% chance and 500 coin reward.
-Uses 120 flame particles each tick while enraged.`,
-  utility: `Mod Name: Rift Market Relay
-Adds teleport pad block and market relay item.
-Crafting uses 4 obsidian and 1 ender pearl.
-Teleport cooldown 30 seconds and cost 75 coins per use.
-Can teleport across dimensions.
-Command /market grants discount buff for 60 seconds.
-Daily limit 5 uses.`
+const sampleGeneratedOutput = `Mod Name: Soul Reaper Kyoraku Blade
+Target: Fabric 1.21.5
+Generated Result: Playable Fabric mod jar for custom katana item with three transformation modes.
+Modes: Sealed, Shikai, Bankai.
+Sealed mode adds +4 damage.
+Shikai mode adds +9 damage and inflicts weakness for 6 seconds (amplifier 1).
+Bankai mode adds +14 damage and inflicts blindness and slowness for 4 seconds (amplifier 2).
+Transformation cooldown: 18 seconds.
+Bankai slash emits void wave with 7 block AoE radius, max 5 affected targets.
+Particles: crimson aura intensity 70.
+Sounds: slash and transform sounds enabled.
+PvP compatibility enabled in combat worlds.
+Disabled worlds: lobby, spawn.
+Recipe enabled.`;
+
+const extractNum = (text: string, regex: RegExp) => {
+  const m = text.match(regex);
+  return m ? Number(m[1]) : undefined;
 };
 
-const yamlOrder: ConfigVariable['category'][] = [
-  'mod',
-  'permissions',
-  'worlds',
-  'gameplay',
-  'combat',
-  'spawning',
-  'economy',
-  'performance',
-  'visuals_sounds',
-  'anti_abuse'
-];
+function analyzeGeneratedMod(text: string): AnalyzerResult {
+  const s = text.toLowerCase();
+  const modName = text.match(/mod name:\s*(.+)/i)?.[1]?.trim() ?? 'Unnamed Generated Mod';
 
-const categoryTitles: Record<ConfigVariable['category'], string> = {
-  mod: 'Mod',
-  general: 'General',
-  permissions: 'Permissions',
-  worlds: 'Worlds',
-  gameplay: 'Gameplay',
-  combat: 'Combat',
-  spawning: 'Spawning',
-  economy: 'Economy',
-  performance: 'Performance',
-  visuals_sounds: 'Visuals & Sounds',
-  anti_abuse: 'Anti-abuse',
-  crafting: 'Crafting'
-};
+  const primaryContentType: ContentType = /weapon|blade|katana|sword/.test(s)
+    ? 'weapon'
+    : /boss|mob/.test(s)
+      ? 'mob/boss'
+      : /armor/.test(s)
+        ? 'armor'
+        : /tool/.test(s)
+          ? 'tool'
+          : /dimension/.test(s)
+            ? 'dimension'
+            : /structure/.test(s)
+              ? 'structure'
+              : /economy|currency/.test(s)
+                ? 'economy system'
+                : /command/.test(s)
+                  ? 'command system'
+                  : /block/.test(s)
+                    ? 'block'
+                    : 'item';
 
-const extractNumber = (text: string, regex: RegExp): number | undefined => {
-  const match = text.match(regex);
-  return match ? Number(match[1]) : undefined;
-};
-
-const analyzeText = (input: string): AnalyzerResult => {
-  const text = input.toLowerCase();
-  const modName = input.match(/mod name:\s*(.+)/i)?.[1]?.trim() ?? 'Unnamed Generated Mod';
-
-  const hasCombat = /damage|critical|weapon|pvp|weakness|blindness|slowness|combat/.test(text);
-  const hasSpawning = /spawn|boss|mob|minion|biome|active/.test(text);
-  const hasEconomy = /coin|price|cost|economy|reward|market|currency/.test(text);
-  const hasTeleport = /teleport|dimension|portal|rift/.test(text);
-  const hasParticles = /particle|aura|tick/.test(text);
-  const hasCrafting = /craft|recipe|obsidian|ingot/.test(text);
-  const hasDrops = /drop|loot|chance|reward/.test(text);
-  const hasAbilities = /cooldown|ability|mode|every\s+\d+\s*seconds/.test(text);
-
-  const detectedFeatures = [
-    hasCombat && 'combat',
-    hasSpawning && 'spawning',
-    hasEconomy && 'economy',
-    hasTeleport && 'teleportation',
-    hasParticles && 'particles',
-    hasCrafting && 'crafting',
-    hasDrops && 'drops',
-    hasAbilities && 'abilities'
+  const detectedMechanics = [
+    /damage|combat/.test(s) && 'combat',
+    /weakness|blindness|slowness|effect/.test(s) && 'status effects',
+    /mode|sealed|shikai|bankai|transform/.test(s) && 'transformation modes',
+    /particle|aura/.test(s) && 'particles',
+    /sound/.test(s) && 'sounds',
+    /aoe|radius/.test(s) && 'aoe',
+    /cooldown/.test(s) && 'cooldowns',
+    /recipe|craft/.test(s) && 'recipes',
+    /drop|loot/.test(s) && 'drops',
+    /spawn|mob|boss/.test(s) && 'spawning',
+    /teleport|dimension/.test(s) && 'teleportation'
   ].filter(Boolean) as string[];
 
-  const contentType = hasSpawning
-    ? 'Mob/Boss System'
-    : hasCombat
-      ? 'Combat Item/Ability'
-      : hasEconomy
-        ? 'Utility/Economy Mechanic'
-        : 'General Mod Mechanic';
+  const controls: CreatorControl[] = [];
+  const sealed = extractNum(s, /sealed mode adds \+(\d+)/) ?? 4;
+  const shikai = extractNum(s, /shikai mode adds \+(\d+)/) ?? 9;
+  const bankai = extractNum(s, /bankai mode adds \+(\d+)/) ?? 14;
+  const cd = extractNum(s, /cooldown:\s*(\d+)/) ?? 18;
+  const aoe = extractNum(s, /(\d+)\s*block\s*aoe\s*radius/) ?? 7;
+  const maxTargets = extractNum(s, /max\s*(\d+)\s*affected\s*targets/) ?? 5;
+  const effectDuration = extractNum(s, /for\s*(\d+)\s*seconds/) ?? 6;
+  const amplifier = extractNum(s, /amplifier\s*(\d+)/) ?? 1;
+  const particles = extractNum(s, /intensity\s*(\d+)/) ?? 70;
 
-  const vars: ConfigVariable[] = [
-    {
-      key: 'name',
-      label: 'Mod Display Name',
-      type: 'string',
-      category: 'mod',
-      defaultValue: modName,
-      value: modName,
-      riskLevel: 'low',
-      inferred: false,
-      reason: 'Identified from generated text.'
-    },
-    {
-      key: 'enabled',
-      label: 'Enable Mod Feature',
-      type: 'boolean',
-      category: 'mod',
-      defaultValue: true,
-      value: true,
-      riskLevel: 'low',
-      inferred: true,
-      reason: 'Global on/off switch is essential for rollback.'
-    },
-    {
-      key: 'node',
-      label: 'Permission Node',
-      type: 'string',
-      category: 'permissions',
-      defaultValue: 'minecraftmod.use',
-      value: 'minecraftmod.use',
-      riskLevel: 'low',
-      inferred: true,
-      reason: 'Permission gates are required for multiplayer control.'
-    },
-    {
-      key: 'disabled_worlds',
-      label: 'Disabled Worlds',
-      type: 'list',
-      category: 'worlds',
-      defaultValue: ['lobby', 'spawn'],
-      value: ['lobby', 'spawn'],
-      riskLevel: 'medium',
-      inferred: true,
-      reason: 'Protect lobby/spawn by default.'
-    }
-  ];
-
-  const cooldown = extractNumber(text, /cooldown\s*(?:is)?\s*(\d+(?:\.\d+)?)\s*seconds?/);
-  if (hasAbilities) {
-    vars.push({
-      key: 'cooldown_seconds',
-      label: 'Action Cooldown',
-      type: 'number',
-      category: 'gameplay',
-      defaultValue: cooldown ?? 15,
-      value: cooldown ?? 15,
-      unit: 'seconds',
-      min: 1,
-      max: 300,
-      riskLevel: 'medium',
-      inferred: !cooldown,
-      reason: 'Ability actions should be rate-limited.'
-    });
+  if (primaryContentType === 'weapon') {
+    controls.push(
+      { key: 'sealed_damage_bonus', label: 'Sealed Damage Bonus', category: 'Combat', input: 'slider', value: sealed, min: 0, max: 20, step: 1, risk: 'medium', source: sealed ? 'explicit' : 'inferred', reason: 'Weapon baseline tuning.' },
+      { key: 'shikai_damage_bonus', label: 'Shikai Damage Bonus', category: 'Combat', input: 'slider', value: shikai, min: 0, max: 30, step: 1, risk: 'high', source: shikai ? 'explicit' : 'inferred', reason: 'Major impact on PvP balance.' },
+      { key: 'bankai_damage_bonus', label: 'Bankai Damage Bonus', category: 'Combat', input: 'slider', value: bankai, min: 0, max: 40, step: 1, risk: 'high', source: bankai ? 'explicit' : 'inferred', reason: 'Peak mode burst damage control.' },
+      { key: 'transformation_cooldown_seconds', label: 'Transformation Cooldown', category: 'Gameplay', input: 'slider', value: cd, min: 1, max: 90, step: 1, risk: 'medium', source: cd ? 'explicit' : 'inferred', reason: 'Prevents rapid mode cycling.' },
+      { key: 'aoe_radius', label: 'AoE Radius', category: 'Effects', input: 'slider', value: aoe, min: 1, max: 16, step: 1, risk: 'high', source: aoe ? 'explicit' : 'inferred', reason: 'Controls area impact and crowd pressure.' },
+      { key: 'max_affected_targets', label: 'Max Affected Targets', category: 'Multiplayer Safety', input: 'number', value: maxTargets, min: 1, max: 20, risk: 'high', source: maxTargets ? 'explicit' : 'inferred', reason: 'Caps chain-hit load and PvP oppression.' },
+      { key: 'effect_duration_seconds', label: 'Effect Duration', category: 'Effects', input: 'slider', value: effectDuration, min: 0, max: 20, step: 1, risk: 'high', source: effectDuration ? 'explicit' : 'inferred', reason: 'Status effect control for fairness.' },
+      { key: 'effect_amplifier', label: 'Effect Amplifier Level', category: 'Effects', input: 'select', value: String(amplifier), options: ['0','1','2','3'], risk: 'high', source: amplifier ? 'explicit' : 'inferred', reason: 'Amplifier strongly shifts combat outcomes.' },
+      { key: 'particle_intensity', label: 'Particle Intensity', category: 'Visuals & Sounds', input: 'slider', value: particles, min: 0, max: 100, step: 1, risk: 'medium', source: particles ? 'explicit' : 'inferred', reason: 'Performance and visual noise tuning.' },
+      { key: 'sound_effects_enabled', label: 'Sound Effects Enabled', category: 'Visuals & Sounds', input: 'toggle', value: /sounds?.+enabled/.test(s), risk: 'low', source: 'explicit', reason: 'Audio preference and feedback control.' },
+      { key: 'pvp_enabled', label: 'PvP Enabled', category: 'Multiplayer Safety', input: 'toggle', value: /pvp.+enabled/.test(s), risk: 'high', source: 'explicit', reason: 'Critical safety control for server rule sets.' },
+      { key: 'disabled_worlds', label: 'Disabled Worlds', category: 'Multiplayer Safety', input: 'tags', value: ['lobby', 'spawn'], risk: 'medium', source: /disabled worlds/.test(s) ? 'explicit' : 'inferred', reason: 'Protect non-combat worlds.' },
+      { key: 'sealed_mode_enabled', label: 'Sealed Mode Enabled', category: 'Advanced', input: 'toggle', value: true, risk: 'low', source: 'inferred', reason: 'Mode feature flag for fast tuning.' },
+      { key: 'shikai_mode_enabled', label: 'Shikai Mode Enabled', category: 'Advanced', input: 'toggle', value: true, risk: 'medium', source: 'inferred', reason: 'Mode feature gate for balance seasons.' },
+      { key: 'bankai_mode_enabled', label: 'Bankai Mode Enabled', category: 'Advanced', input: 'toggle', value: true, risk: 'high', source: 'inferred', reason: 'High power mode should be quickly switchable.' }
+    );
   }
 
-  if (hasCombat) {
-    const damage = extractNumber(text, /deals?\s*(\d+(?:\.\d+)?)\s*damage/);
-    const radius = extractNumber(text, /(\d+(?:\.\d+)?)\s*block\s*radius/);
-    vars.push({ key: 'pvp_only', label: 'PvP Only', type: 'boolean', category: 'combat', defaultValue: true, value: true, riskLevel: 'medium', inferred: true, reason: 'Combat mechanics should be scoped.' });
-    vars.push({ key: 'base_damage', label: 'Base Damage', type: 'number', category: 'combat', defaultValue: damage ?? 8, value: damage ?? 8, min: 0, max: 100, riskLevel: 'high', inferred: !damage, reason: 'Damage tuning affects balance.' });
-    if (radius) vars.push({ key: 'aoe_radius', label: 'AoE Radius', type: 'number', category: 'combat', defaultValue: radius, value: radius, min: 1, max: 64, unit: 'blocks', riskLevel: 'high', inferred: false, reason: 'Explicit radius extracted from text.' });
-  }
+  return { modName, target: 'Fabric 1.21.5', primaryContentType, detectedMechanics, confidence: 0.92, controls };
+}
 
-  if (hasSpawning) {
-    const health = extractNumber(text, /(\d+(?:\.\d+)?)\s*health/);
-    const spawnRate = extractNumber(text, /spawn rate\s*(?:is)?\s*(\d+(?:\.\d+)?)\s*%/);
-    vars.push({ key: 'max_active_entities', label: 'Max Active Entities', type: 'number', category: 'spawning', defaultValue: 3, value: 3, min: 1, max: 100, riskLevel: 'high', inferred: true, reason: 'Caps prevent runaway mob spam.' });
-    vars.push({ key: 'spawn_rate_percent', label: 'Spawn Rate', type: 'number', category: 'spawning', defaultValue: spawnRate ?? 1, value: spawnRate ?? 1, unit: '%', min: 0, max: 100, riskLevel: 'high', inferred: !spawnRate, reason: 'Spawn frequency controls load.' });
-    if (health) vars.push({ key: 'mob_health', label: 'Mob Health', type: 'number', category: 'spawning', defaultValue: health, value: health, min: 1, max: 5000, riskLevel: 'high', inferred: false, reason: 'Boss/mob health extracted.' });
-  }
+const categories: ControlCategory[] = ['Gameplay', 'Combat', 'Effects', 'Visuals & Sounds', 'Multiplayer Safety', 'Advanced'];
 
-  if (hasDrops) {
-    const dropChance = extractNumber(text, /(\d+(?:\.\d+)?)\s*%\s*chance/);
-    vars.push({ key: 'drop_chance_percent', label: 'Drop Chance', type: 'number', category: 'economy', defaultValue: dropChance ?? 5, value: dropChance ?? 5, min: 0, max: 100, unit: '%', riskLevel: 'medium', inferred: !dropChance, reason: 'Loot rates impact progression and economy.' });
-  }
-
-  if (hasEconomy) {
-    const cost = extractNumber(text, /cost\s*(\d+(?:\.\d+)?)\s*coins?/);
-    vars.push({ key: 'action_cost', label: 'Action Cost', type: 'number', category: 'economy', defaultValue: cost ?? 50, value: cost ?? 50, min: 0, max: 100000, riskLevel: 'medium', inferred: !cost, reason: 'Currency sinks should be configurable.' });
-    vars.push({ key: 'max_daily_reward', label: 'Daily Currency Cap', type: 'number', category: 'economy', defaultValue: 1000, value: 1000, min: 0, max: 100000, riskLevel: 'high', inferred: true, reason: 'Protects against economy inflation.' });
-  }
-
-  if (hasParticles) {
-    vars.push({ key: 'effect_tick_interval', label: 'Effect Tick Interval', type: 'number', category: 'performance', defaultValue: 10, value: 10, min: 1, max: 200, unit: 'ticks', riskLevel: 'high', inferred: true, reason: 'Tick interval impacts TPS usage.' });
-    vars.push({ key: 'particle_density_multiplier', label: 'Particle Density', type: 'number', category: 'visuals_sounds', defaultValue: 0.6, value: 0.6, min: 0, max: 2, riskLevel: 'high', inferred: true, reason: 'Particle load should be tunable.' });
-  }
-
-  if (hasTeleport) {
-    vars.push({ key: 'cross_dimension_teleport', label: 'Allow Cross-Dimension Teleport', type: 'boolean', category: 'anti_abuse', defaultValue: false, value: false, riskLevel: 'high', inferred: true, reason: 'Teleportation can bypass protections.' });
-  }
-
-  const warnings: AnalyzerResult['warnings'] = [];
-  if (/buff|effect|weakness|blindness|slowness/.test(text)) warnings.push({ severity: 'warning', category: 'balance', message: 'Too many stacked effects can hurt PvP balance.', suggestedFix: 'Limit concurrent effects and expose durations.' });
-  if (/blindness|weakness|slowness/.test(text)) warnings.push({ severity: 'critical', category: 'combat', message: 'AoE control effects may feel oppressive.', suggestedFix: 'Reduce radius/duration and restrict PvP worlds.' });
-  if (hasParticles) warnings.push({ severity: 'warning', category: 'performance', message: 'Frequent particles/ticks may reduce TPS.', suggestedFix: 'Increase tick interval and lower particle density.' });
-  if (hasSpawning) warnings.push({ severity: 'warning', category: 'spawning', message: 'Boss/mob features require spawn caps and world limits.', suggestedFix: 'Use max active caps and allowed world/biome lists.' });
-  if (hasDrops || hasEconomy) warnings.push({ severity: 'warning', category: 'economy', message: 'Reward loops can inflate currency value.', suggestedFix: 'Apply daily caps and tune drop chance.' });
-  if (hasTeleport) warnings.push({ severity: 'critical', category: 'anti_abuse', message: 'Teleport mechanics can bypass safe zones.', suggestedFix: 'Disable in spawn/lobby worlds and require permissions.' });
-  warnings.push({ severity: 'info', category: 'world-safety', message: 'Generated features should be disabled in lobby/spawn by default.', suggestedFix: 'Keep disabled_worlds populated unless intentionally overridden.' });
-
-  const implementationNotes = [
-    'Map these keys directly into your plugin config reader to keep naming consistent.',
-    'Validate min/max values at startup and log warnings for unsafe values.',
-    'Run world + permission checks before every action execution path.'
-  ];
-
-  return {
-    modName,
-    contentType,
-    confidence: Math.min(0.98, 0.5 + detectedFeatures.length * 0.06),
-    detectedFeatures,
-    variables: vars,
-    warnings,
-    implementationNotes
-  };
-};
-
-function App() {
-  const [input, setInput] = useState(sampleInputs.weapon);
+export default function App() {
+  const [generatedOutput] = useState(sampleGeneratedOutput);
   const [result, setResult] = useState<AnalyzerResult | null>(null);
 
   const grouped = useMemo(() => {
-    if (!result) return {} as Record<string, ConfigVariable[]>;
-    return result.variables.reduce((acc, v) => {
-      acc[v.category] = [...(acc[v.category] ?? []), v];
+    if (!result) return {} as Record<ControlCategory, CreatorControl[]>;
+    return result.controls.reduce((acc, item) => {
+      acc[item.category] = [...(acc[item.category] ?? []), item];
       return acc;
-    }, {} as Record<string, ConfigVariable[]>);
+    }, {} as Record<ControlCategory, CreatorControl[]>);
   }, [result]);
 
-  const yaml = useMemo(() => {
-    if (!result) return '';
-    let output = `# Server-ready config.yml generated from mod text\n`;
-    for (const category of yamlOrder) {
-      const values = grouped[category];
-      if (!values?.length) continue;
-      output += `\n${category}:\n`;
-      for (const item of values) {
-        output += `  # ${item.reason}${item.inferred ? ' (inferred)' : ''}${item.riskLevel === 'high' ? ' [high-risk]' : ''}\n`;
-        const value = Array.isArray(item.value)
-          ? `[${item.value.map((v) => `"${v}"`).join(', ')}]`
-          : typeof item.value === 'string'
-            ? `"${item.value}"`
-            : item.value;
-        output += `  ${item.key}: ${value}\n`;
-      }
-    }
-    return output;
-  }, [grouped, result]);
-
-  const updateVariable = (target: ConfigVariable, value: string | number | boolean | string[]) => {
-    setResult((previous) => {
-      if (!previous) return previous;
-      return {
-        ...previous,
-        variables: previous.variables.map((item) => (item.key === target.key ? { ...item, value } : item))
-      };
-    });
+  const updateControl = (key: string, value: CreatorControl['value']) => {
+    setResult((prev) => prev ? { ...prev, controls: prev.controls.map((c) => c.key === key ? { ...c, value } : c) } : prev);
   };
 
-  const downloadYaml = () => {
-    const blob = new Blob([yaml], { type: 'text/yaml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'config.yml';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
+  const schemaPreview = useMemo(() => result ? JSON.stringify({ creatorControls: result.controls }, null, 2) : '', [result]);
+  const configPreview = useMemo(() => result ? JSON.stringify({ mod: result.modName, target: result.target, tuning: Object.fromEntries(result.controls.map((c) => [c.key, c.value])) }, null, 2) : '', [result]);
 
-  return (
-    <div className="container">
-      <header className="header-card">
-        <div className="brand-row">
-          <span className="tag green">LOCAL ANALYZER</span>
-          <span className="tag violet">SERVER CONFIG LAYER</span>
-          <span className="tag">NO BACKEND</span>
-        </div>
-        <h1 className="header-title">Minecraft Mod Configurator</h1>
-        <div className="meta">Post-generation configurability scanner for multiplayer-safe mod tuning.</div>
-      </header>
-      <div className="explanation-card">
-        Generated mods are creative, but multiplayer servers need configurable limits, permissions, world restrictions, and performance controls. This prototype scans generated mod output and creates a server-ready config layer.
+  return <div className="container">
+    <header className="header-card">
+      <div className="brand-row"><span className="tag green">GENERATED MOD RESULT</span><span className="tag violet">OPTIONAL CREATOR CONTROLS</span></div>
+      <h1 className="header-title">Creator Controls Prototype</h1>
+      <p className="meta">A post-generation tuning layer for CreativeMode-style Minecraft mods.</p>
+    </header>
+
+    <section>
+      <div className="section-heading"><h2>Soul Reaper Kyoraku Blade</h2><span className="tag">Target: Fabric 1.21.5</span></div>
+      <p className="meta">Generated output preview (source-like text):</p>
+      <pre>{generatedOutput}</pre>
+      <div className="yaml-actions">
+        <button className="secondary">Download Generated JAR (Mock)</button>
+        <button onClick={() => setResult(analyzeGeneratedMod(generatedOutput))}>Add Creator Controls</button>
       </div>
-      <div className="top-controls">
-        <select onChange={(e) => setInput(sampleInputs[e.target.value])}>
-          <option value="weapon">Load Sample: Weapon/Combat</option>
-          <option value="boss">Load Sample: Boss/Spawning/Drops</option>
-          <option value="utility">Load Sample: Utility/Economy/Teleport</option>
-        </select>
-        <button onClick={() => setResult(analyzeText(input))}>Analyze Configurability</button>
-      </div>
-      <textarea rows={12} value={input} onChange={(e) => setInput(e.target.value)} />
+    </section>
 
-      {result && (
-        <>
-          <section>
-            <div className="section-heading"><h2>Analysis Overview</h2></div>
-            <p><b>Mod:</b> {result.modName} | <b>Type:</b> {result.contentType} | <b>Confidence:</b> {(result.confidence * 100).toFixed(0)}%</p>
-            <p><b>Detected Features:</b> {result.detectedFeatures.join(', ')}</p>
-          </section>
+    {result && <>
+      <section>
+        <div className="section-heading"><h2>Detected Mod Profile</h2></div>
+        <p><b>Primary Content Type:</b> {result.primaryContentType} &nbsp; <b>Confidence:</b> {(result.confidence*100).toFixed(0)}%</p>
+        <p><b>Detected Mechanics:</b> {result.detectedMechanics.join(', ')}</p>
+      </section>
 
-          <section>
-            <div className="section-heading"><h2>Server Settings</h2></div>
-            {yamlOrder.map((category) => {
-              const values = grouped[category];
-              if (!values?.length) return null;
-              return (
-                <div key={category} className="category-block">
-                  <h3>{categoryTitles[category]}</h3>
-                  {values.map((item) => (
-                    <div className="setting" key={`${category}-${item.key}`}>
-                      <div className="setting-head">
-                        <label>{item.label}</label>
-                        <span className={`risk ${item.riskLevel}`}>{item.riskLevel.toUpperCase()} RISK</span>
-                      </div>
-                      {item.type === 'boolean' ? (
-                        <input type="checkbox" checked={Boolean(item.value)} onChange={(e) => updateVariable(item, e.target.checked)} />
-                      ) : item.type === 'list' ? (
-                        <input value={(item.value as string[]).join(', ')} onChange={(e) => updateVariable(item, e.target.value.split(',').map((x) => x.trim()).filter(Boolean))} />
-                      ) : (
-                        <input type={item.type === 'number' ? 'number' : 'text'} value={String(item.value)} onChange={(e) => updateVariable(item, item.type === 'number' ? Number(e.target.value) : e.target.value)} />
-                      )}
-                      <small>{item.reason} {item.inferred ? '(Inferred)' : '(Detected)'}</small>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </section>
+      <section>
+        <div className="section-heading"><h2>Creator Controls</h2></div>
+        {categories.map((cat) => grouped[cat]?.length ? <div className="category-block" key={cat}><h3>{cat}</h3>
+          {grouped[cat].map((control) => <div className="setting" key={control.key}>
+            <div className="setting-head"><label>{control.label}</label><span className={`risk ${control.risk}`}>{control.risk.toUpperCase()}</span></div>
+            {control.input === 'slider' && <input type="range" min={control.min} max={control.max} step={control.step ?? 1} value={Number(control.value)} onChange={(e) => updateControl(control.key, Number(e.target.value))} />}
+            {control.input === 'number' && <input type="number" min={control.min} max={control.max} value={Number(control.value)} onChange={(e) => updateControl(control.key, Number(e.target.value))} />}
+            {control.input === 'toggle' && <input type="checkbox" checked={Boolean(control.value)} onChange={(e) => updateControl(control.key, e.target.checked)} />}
+            {control.input === 'select' && <select value={String(control.value)} onChange={(e) => updateControl(control.key, e.target.value)}>{control.options?.map((o) => <option value={o} key={o}>{o}</option>)}</select>}
+            {control.input === 'tags' && <input value={(control.value as string[]).join(', ')} onChange={(e) => updateControl(control.key, e.target.value.split(',').map((x) => x.trim()).filter(Boolean))} />}
+            <small>{control.reason} • {control.source === 'explicit' ? 'Explicitly detected' : 'Inferred'}</small>
+          </div>)}
+        </div> : null)}
+      </section>
 
-          <section>
-            <div className="section-heading"><h2>Warnings</h2></div>
-            {result.warnings.map((warning, index) => (
-              <div key={index} className={`warn ${warning.severity}`}>
-                <b>{warning.severity.toUpperCase()}</b> [{warning.category}] {warning.message}<br />
-                Fix: {warning.suggestedFix}
-              </div>
-            ))}
-          </section>
+      <section>
+        <div className="section-heading"><h2>Tuning Previews</h2></div>
+        <p className="meta">Creator Controls schema preview (JSON)</p>
+        <pre>{schemaPreview}</pre>
+        <p className="meta">Fabric-style config preview (JSON)</p>
+        <pre>{configPreview}</pre>
+        <p className="meta">Before / After Java snippet preview</p>
+        <pre>{`// BEFORE (generated hardcoded values)\nfloat bankaiDamageBonus = 14f;\nint transformationCooldownSeconds = 18;\nif (bankaiMode) applyAoE(7, 5);\n\n// AFTER (post-generation Creator Controls layer)\nfloat bankaiDamageBonus = CreatorControls.getFloat("bankai_damage_bonus");\nint transformationCooldownSeconds = ModConfig.getInt("transformation_cooldown_seconds");\nif (ModConfig.getBoolean("bankai_mode_enabled")) applyAoE(ModConfig.getInt("aoe_radius"), ModConfig.getInt("max_affected_targets"));`}</pre>
+      </section>
 
-          <section>
-            <div className="section-heading"><h2>config.yml Export</h2></div>
-            <div className="yaml-actions">
-              <button onClick={() => navigator.clipboard.writeText(yaml)}>Copy config.yml</button>
-              <button className="secondary" onClick={downloadYaml}>Download config.yml</button>
-            </div>
-            <pre>{yaml}</pre>
-          </section>
-
-          <section>
-            <div className="section-heading"><h2>Implementation Notes</h2></div>
-            <ul>
-              {result.implementationNotes.map((note) => (<li key={note}>{note}</li>))}
-            </ul>
-          </section>
-        </>
-      )}
-    </div>
-  );
+      <section>
+        <div className="section-heading"><h2>Implementation Notes</h2></div>
+        <ul>
+          <li>This prototype demonstrates a post-generation refactor/tuning layer for generated mods.</li>
+          <li>Users adjust values through no-code controls in UI, not by manually editing raw code files.</li>
+          <li>This frontend prototype does not compile real JARs.</li>
+          <li>In production, full tuned JAR rebuild happens in CreativeMode’s existing generation/build pipeline.</li>
+        </ul>
+        <div className="yaml-actions"><button>Download Tuned Package (Mock)</button></div>
+      </section>
+    </>}
+  </div>;
 }
-
-export default App;
