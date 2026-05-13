@@ -1,4 +1,4 @@
-# Creator Controls Prototype (v2)
+# Creator Controls Prototype (v2) - For CreativeMode (YC S24)
 
 ## What Creator Controls are
 
