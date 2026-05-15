@@ -2,7 +2,7 @@
 
 ## What Creator Controls are
 
-Creator Controls is a post-generation tuning layer for generated Minecraft mods. Instead of re-prompting for every small balance tweak, users can adjust key values directly in a no-code UI.
+Creator Controls is a post-generation tuning layer for generated Minecraft mods. Instead of re-prompting for every small balance tweak, users can adjust key values directly in a no-code UI. These controls are a prototype for CreativeMode (YC S24).
 
 ## Why prompt-only edits are awkward for small changes
 
